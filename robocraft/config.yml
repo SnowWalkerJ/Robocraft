@@ -1,0 +1,86 @@
+ticks:
+  senseForward: 2
+  senseSurroundings: 1
+  rotate: 10
+  moveForward: 20
+  moveBackward: 25
+  moveUpward: 22
+  moveDownward: 22
+  attack: 17
+
+init:
+  player:
+    properties:
+      health: 10
+      attack:
+        default: 1
+        back: 2
+        defended: 0.5
+      defense: 1.0
+      speed: 1.0
+    capacity:
+      weight: 100
+      space: 100
+  room:
+    height: 3
+    width: 7
+    length: 13
+    randomObjects: false
+  game:
+    ticksPerSec: 40
+    timeout: 90
+    fogDistance: 5
+    surroundingDistance: 2
+
+components:
+  LightArmor:
+    costs:
+      weight: 10
+      space: 30
+    properties:
+      defense: 0.1
+  HeavyArmor:
+    costs:
+      weight: 30
+      space: 30
+    properties:
+      defense: 0.2
+      speed: -0.05
+
+  LightBoots:
+    costs:
+      weight: 10
+      space: 10
+    properties:
+      defense: 0.05
+      speed: 0.05
+
+  SpeedCore:
+    costs:
+      weight: 30
+      space: 30
+    properties:
+      speed: 0.15
+
+  LightSword:
+    costs:
+      weight: 20
+      space: 20
+    properties:
+      attack: 0.1
+  HeavySword:
+    costs:
+      weight: 30
+      space: 20
+    properties:
+      attack: 0.2
+      speed: -0.05
+  Dagger:
+    costs:
+      weight: 10
+      space: 10
+    properties:
+      attack:
+        default: 0.05
+        back: 0.15
+      speed: 0.05
