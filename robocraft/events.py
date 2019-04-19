@@ -12,11 +12,11 @@ class EventHandler:
     def unregister(self, event, handler):
         self.handlers[event].remove(handler)
 
-    def fire(event, *args, **kwargs):
+    def fire(self, event, *args, **kwargs):
         self.events.append((event, args, kwargs))
 
     async def poll(self):
         while self.events:
-            event, args, kwargs = self.events.popLeft()
-            for handler in self.handler[event]:
+            event, args, kwargs = self.events.popleft()
+            for handler in self.handlers[event]:
                 await handler(*args, **kwargs)

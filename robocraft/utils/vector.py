@@ -47,7 +47,7 @@ class Vector:
 
     def __mul__(self, other):
         """根据other的方向做旋转"""
-        x = self.x * other.x - self.z * other.z
+        x = self.x * other.x + self.z * other.z
         y = self.y
         z = -self.x * other.z + self.z * other.x
         return Vector(x, y, z)

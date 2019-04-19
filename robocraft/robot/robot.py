@@ -29,7 +29,7 @@ class Robot(metaclass=APIMeta):
 
         async def _():
             while not self.game.is_ready():
-                await asyncio.sleep(self.game.TICK * 0.5)
+                await asyncio.sleep(env.TICK.get() * 0.5)
             await self.run()
 
         asyncio.ensure_future(_())

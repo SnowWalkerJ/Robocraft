@@ -1,3 +1,7 @@
 __pycache__/
 .vscode/
 *.pyc
+build/
+dist/
+_static/
+_templates/

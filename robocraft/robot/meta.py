@@ -10,12 +10,12 @@ class APIMeta(type):
         new_attrs = {}
         for attr_name, attr in attrs.items():
             if hasattr(attr, 'is_api'):
-                if inspect.iscoroutinefunction(attr):
-                    fn_name = attr_name.strip("_")
-                    attr = wraps(attr)(cls.__make_async_func(fn_name))
-                elif inspect.isfunction(attr):
+                if attr_name.startswith("get"):
                     fn_name = attr_name.strip("_")
                     attr = wraps(attr)(cls.__make_func(fn_name))
+                else:
+                    fn_name = attr_name.strip("_")
+                    attr = wraps(attr)(cls.__make_async_func(fn_name))
             new_attrs[attr_name] = attr
         return type.__new__(cls, name, bases, new_attrs)
 
@@ -23,28 +23,22 @@ class APIMeta(type):
     def __make_async_func(cls, name):
         async def fn(player, *args, **kwargs):
             game = env.game.get()
-            await cls.__delay(game, player, name)
             f = getattr(game, name)
+            entity = game.entities.get_or_create(player.uuid)
             if inspect.iscoroutinefunction(f):
-                return await f(player, *args, **kwargs)
+                return await f(entity, *args, **kwargs)
             else:
-                return f(player, *args, **kwargs)
+                return f(entity, *args, **kwargs)
         return fn
 
     @staticmethod
     def __make_func(name):
-        def fn(palyer, *args, **kwargs):
+        def fn(player, *args, **kwargs):
             game = env.game.get()
-            return getattr(game, name)(player, *args, **kwargs)
+            entity = game.entities.get_or_create(player.uuid)
+            return getattr(game, name)(entity, *args, **kwargs)
         fn.name = name
         return fn
-
-    @staticmethod
-    async def __delay(world, player, name):
-        delay = world.getTimeCosts(player).get(name, 0)
-        if delay:
-            print("delay", delay, "ticks")
-            await asyncio.sleep(delay * world.TICK)
 
 
 def api(fn):
