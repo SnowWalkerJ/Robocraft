@@ -1,26 +1,28 @@
 ticks:
-  senseForward: 2
-  senseSurroundings: 1
-  rotate: 10
-  moveForward: 20
-  moveBackward: 25
-  moveUpward: 22
-  moveDownward: 22
-  attack: 17
+  senseForward: 2.0
+  senseSurroundings: 1.0
+  rotate: 10.0
+  moveForward: 20.0
+  moveBackward: 25.0
+  moveUpward: 22.0
+  moveDownward: 22.0
+  attack: 17.0
 
 init:
   player:
     properties:
-      health: 10
+      hp: 10.0
+      mp: 10.0
       attack:
-        default: 1
-        back: 2
-        defended: 0.5
+        normal: 1.0
+        back: 2.0
       defense: 1.0
       speed: 1.0
-    capacity:
-      weight: 100
-      space: 100
+      senseRadius: 2.0
+      senseDistance: 7.0
+      capacity:
+        weight: 100
+        space: 100
   room:
     height: 3
     width: 7

@@ -1,5 +1,6 @@
 import asyncio
 from collections import defaultdict
+import copy
 import contextvars
 from functools import wraps
 import inspect
@@ -13,7 +14,7 @@ from .events import EventHandler
 from . import env
 from .robot import Robot
 from .utils.vector import Vector
-from .utils.property import Property
+from .utils.property import *
 from . import exceptions
 
 
@@ -21,7 +22,7 @@ def delay(fn):
     @wraps(fn)
     async def wrapped(self, player, *args, **kwags):
         fn_name = fn.__qualname__.split(".")[-1]
-        delay = self.getTimeCosts(player).get(fn_name, 0)
+        delay = getattr(self.getTimeCosts(player), fn_name, 0)
         if delay:
             delay = max(int(delay), 1)
             await asyncio.sleep(delay * env.TICK.get())
@@ -74,24 +75,18 @@ class Game:
         entity = self.entities.get_or_create(player.uuid, Entity.Player, player)
         self._check_capacity(player.components)
         enhancement = self._components_enhancement(player.components)
-        timecosts = CONFIG['ticks']
-        real_timecosts = {key: value / (enhancement['speed'].default + 1) for key, value in timecosts.items()}
+        origin_property = RobotProperty(**CONFIG['init']['player']['properties'])
+        enhanced_property = origin_property * (enhancement + 1)
         location, direction = self._get_next_spawn_status()
-        properties = {key: Property(value) * (enhancement[key] + 1) for key, value in CONFIG['init']['player']['properties'].items()}
         self.__entity_status[entity] = {
-            "init": {
-                "type": Entity.Player,
-                "uuid": player.uuid,
-                "enhancements": enhancement,
-                "timeCosts": real_timecosts,
-                "properties": properties,
-            },
-            "status": {
-                "location": location,
-                "direction": direction,
-                "health": properties['health'],
-                "alive": True,
-            }
+            "type": Entity.Player,
+            "uuid": player.uuid,
+            "enhancements": enhancement,
+            "timeCosts": SpeedProperty(**CONFIG['ticks']) / (enhanced_property.speed + 1),
+            "properties": enhanced_property,
+            "location": location,
+            "direction": direction,
+            "alive": True,
         }
         self.__players[player.uuid] = player
         self.__alive_count += 1
@@ -125,21 +120,20 @@ class Game:
                 self.__create_wall(self.length // 2, y, z)
 
     def _check_capacity(self, components: List[str]):
-        capacities = CONFIG['init']['player']['capacity'].copy()
+        capacities = CapacityProperty(**CONFIG['init']['player']['properties']['capacity'])
         for component in components:
             if component not in CONFIG['components']:
                 raise ValueError(f"Invalid component {component}")
-            for key, value in CONFIG['components'][component]['costs'].items():
-                capacities[key] -= value
-                if capacities[key] < 0:
-                    raise exceptions.CapacityExceed
+            cost = CapacityProperty(**CONFIG['components'][component]['costs'])
+            capacities = capacities - cost
+        if capacities.weight < 0 or capacities.space < 0:
+            raise ValueError("Capacity exceeded")
 
     def _components_enhancement(self, components: List[str]) -> dict:
-        enhancement = defaultdict(lambda: Property(0.0))
+        enhancement = ComponentProperty()
         for component in components:
-            properties = CONFIG['components'][component]['properties']
-            for key, value in properties.items():
-                enhancement[key] = enhancement[key] + Property(value)
+            properties = ComponentProperty(**CONFIG['components'][component]['properties'])
+            enhancement = enhancement + properties
         return enhancement
 
     def _get_next_spawn_status(self) -> Tuple[Vector, Vector]:
@@ -156,13 +150,19 @@ class Game:
         return None
 
     def _set_status(self, player: Entity, attr, value):
-        self.__entity_status[player]['status'][attr] = value
+        if attr in ("location", "direction"):
+            self.__entity_status[player][attr] = value
+        else:
+            setattr(self.__entity_status[player]["properties"], attr, value)
 
     def _get_status(self, player: Entity, attr=None):
         if attr:
-            return self.__entity_status[player]['status'][attr]
+            if attr in ("location", "direction"):
+                return self.__entity_status[player][attr]
+            else:
+                return getattr(self.__entity_status[player]['properties'], attr)
         else:
-            return self.__entity_status[player]['status'].copy()
+            return copy.deepcopy(self.__entity_status[player])
 
     def _get_relative_status(self, origin: Entity, other: Entity) -> dict:
         origin_location = self._get_status(origin, "location")
@@ -177,12 +177,12 @@ class Game:
         return status
 
     def _calc_harm(self, source: Entity.Player, target: Entity.Player) -> float:
-        attacks = self.getProperties(source)['attack']
-        defenses = self.getProperties(target)['defense']
+        attacks = self.getProperties(source).attack
+        defenses = self.getProperties(target).defense
         if self._get_relative_status(source, target)['direction'] == Vector(1, 0, 0):
             attack, defense = attacks.back, defenses.back
         else:
-            attack, defense = attacks.default, defenses.normal
+            attack, defense = attacks.normal, defenses.normal
         return attack / defense
 
     def tolist(self):
@@ -211,7 +211,7 @@ class Game:
     # ====================== Events ===================== #
 
     async def evnt_kills(self, source: Entity.Player, target: Entity.Player):
-        self.__entity_status[target]['status']['alive'] = False
+        self.__entity_status[target]['alive'] = False
         self.__alive_count -= 1
 
     # ======================= API ======================= #
@@ -250,8 +250,8 @@ class Game:
         entity = self._has_entity(facing_location)
         if entity and isinstance(entity, Entity.Player):
             harm = self._calc_harm(player, entity)
-            health = self._get_status(entity, "health").default - harm
-            self._set_status(entity, "health", Property(health))
+            health = self._get_status(entity, "hp") - harm
+            self._set_status(entity, "hp", health)
             entity.robot.events.fire("attacked", source=self._get_relative_status(entity, player), harm=harm)
             if health <= 0:
                 self.events.fire("kills", player, entity)
@@ -308,13 +308,13 @@ class Game:
         self._set_status(player, "direction", direction * offset)
 
     def getProperties(self, player: Entity.Player):
-        return self.__entity_status[player]['init']['properties'].copy()
+        return copy.deepcopy(self.__entity_status[player]['properties'])
 
     def getEnhancements(self, player: Entity.Player):
-        return self.__entity_status[player]['init']['enhancements'].copy()
+        return copy.deepcopy(self.__entity_status[player]['enhancements'])
 
     def getTimeCosts(self, player: Entity.Player):
-        return self.__entity_status[player]['init']['timeCosts'].copy()
+        return copy.deepcopy(self.__entity_status[player]['timeCosts'])
 
     def getSize(self, player: Entity.Player):
         return (self.__length, self.__height, __self.__width)

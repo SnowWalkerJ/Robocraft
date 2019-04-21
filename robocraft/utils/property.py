@@ -1,78 +1,157 @@
-from numbers import Number
-from typing import Union, Dict
+import inspect
+from numbers import Real, Real
 
-from .typecheck import type_check, overload
+from .typecheck import overload
 
 
-class Property:
+class PropertyMeta(type):
+    def __new__(cls, name, bases, attrs):
+        if '__annotations__' in attrs and '__init__' in attrs:
+            attrs['__init__'].__annotations__ = attrs['__annotations__']
+        return super().__new__(cls, name, bases, attrs)
+
+
+class PropertyBase(metaclass=PropertyMeta):
     @overload
-    def __init__(self, value: Dict[str, Number]):
-        self.data = value.copy()
-        if "default" not in self.data:
-            self.data['default'] = 0
+    def __init__(self, *args, **kwargs):
+        params = [
+            inspect.Parameter(key, inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=_type, default=_type())
+            for key, _type in self.__annotations__.items()
+        ]
+        signature = inspect.Signature(params)
 
-    @__init__.register
-    def _(self, value: Number):
-        self.data = {'default': value}
-
-    def __getattr__(self, attr):
-        if attr == "data":
-            return super().__getattr__(attr)
-        if attr in self.data:
-            return self.data[attr]
-        else:
-            return self.data['default']
-
-    def __setattr__(self, attr, value):
-        if attr == "data":
-            return super().__setattr__(attr, value)
-        self.data[attr] = value
-
-    def __iadd__(self, other):
-        if isinstance(other, Number):
-            for key in self.data.keys():
-                self.data[key] += other
-        elif isinstance(other, Property):
-            for key in other.keys():
-                value = getattr(other, key)
-                if key in self.data:
-                    self.data[key] += value
+        params = signature.bind(*args, **kwargs)
+        params.apply_defaults()
+        for key, value in params.arguments.items():
+            _type = self.__annotations__[key]
+            if issubclass(_type, PropertyBase):
+                if isinstance(value, dict):
+                    value = _type(**value)
+                elif isinstance(value, PropertyBase):
+                    kwargs = {key: getattr(value, key) for key in value.__annotations__}
+                    value = _type(**kwargs)
                 else:
-                    self.data[key] = self.data['default'] + value
-
-    def __add__(self, other):
-        data = self.data.copy()
-        if isinstance(other, Number):
-            for key in data.keys():
-                data[key] += other
-        elif isinstance(other, Property):
-            for key in other.keys():
-                value = getattr(other, key)
-                if key in data:
-                    data[key] += value
-                else:
-                    data[key] = data['default'] + value
-        return Property(data)
-
-    def __mul__(self, other):
-        data = self.data.copy()
-        if isinstance(other, Number):
-            for key in data.keys():
-                data[key] *= other
-        elif isinstance(other, Property):
-            for key in other.keys():
-                value = getattr(other, key)
-                if key in data:
-                    data[key] *= value
-                else:
-                    data[key] = data['default'] * value
-        return Property(data)
-
-    def keys(self):
-        return self.data.keys()
+                    value = _type(value)
+            setattr(self, key, value)
 
     def __repr__(self):
-        if len(self.data) == 1:
-            return repr(self.data['default'])
-        else:
-            return repr(self.data)
+        data = " ".join(f"{key}={repr(getattr(self, key))}" for key in self.__annotations__)
+        return f"<{self.__class__.__qualname__} {data}>"
+
+    @overload
+    def __add__(self, other):
+        result = self.__class__()
+        for key in other.__annotations__.keys():
+            setattr(result, key, getattr(self, key) + getattr(other, key))
+        return result
+
+    @__add__.register
+    def __add__(self, other: Real):
+        result = self.__class__()
+        for key in self.__annotations__.keys():
+            setattr(result, key, getattr(self, key) + other)
+        return result
+
+    @overload
+    def __sub__(self, other):
+        result = self.__class__()
+        for key in other.__annotations__.keys():
+            setattr(result, key, getattr(self, key) - getattr(other, key))
+        return result
+
+    @__sub__.register
+    def __sub__(self, other: Real):
+        result = self.__class__()
+        for key in self.__annotations__.keys():
+            setattr(result, key, getattr(self, key) - other)
+        return result
+
+    @overload
+    def __mul__(self, other):
+        result = self.__class__()
+        for key in self.__annotations__.keys():
+            if hasattr(other, key):
+                setattr(result, key, getattr(self, key) * getattr(other, key))
+            else:
+                setattr(result, key, getattr(self, key))
+        return result
+
+    @__mul__.register
+    def __mul__(self, other: Real):
+        result = self.__class__()
+        for key in self.__annotations__.keys():
+            setattr(result, key, getattr(self, key) * other)
+        return result
+
+    @overload
+    def __truediv__(self, other):
+        result = self.__class__()
+        for key in other.__annotations__.keys():
+            setattr(result, key, getattr(self, key) / getattr(other, key))
+        return result
+
+    @__truediv__.register
+    def __truediv__(self, other: Real):
+        result = self.__class__()
+        for key in self.__annotations__.keys():
+            setattr(result, key, getattr(self, key) / other)
+        return result
+
+    def keys(self):
+        return self.__annotations__.keys()
+
+    def __setattr__(self, key, value):
+        if key in self.__annotations__:
+            _type = self.__annotations__[key]
+            assert isinstance(value, _type)
+        super().__setattr__(key, value)
+
+
+class PureProperty(PropertyBase):
+    @PropertyBase.__init__.register
+    def __init__(self, value: Real):
+        for key in self.__annotations__.keys():
+            setattr(self, key, value)
+
+
+class AttackProperty(PureProperty):
+    normal: float
+    back: float
+
+
+class SpeedProperty(PureProperty):
+    senseForward: float
+    senseSurroundings: float
+    rotate: float
+    moveForward: float
+    moveBackward: float
+    moveUpward: float
+    moveDownward: float
+    attack: float
+
+
+class CapacityProperty(PureProperty):
+    weight: int
+    space: int
+
+
+class RobotProperty(PropertyBase):
+    hp: float
+    mp: float
+    attack: AttackProperty
+    defense: AttackProperty
+    speed: SpeedProperty
+    senseRadius: float
+    senseDistance: float
+    capacity: CapacityProperty
+
+
+class ComponentProperty(PropertyBase):
+    attack: AttackProperty
+    defense: AttackProperty
+    speed: SpeedProperty
+    costs: CapacityProperty
+
+
+
+CapacityProperty(100, 100)
